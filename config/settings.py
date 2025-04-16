@@ -61,10 +61,9 @@ class SystemConfig:
 
     # supported text file formats
     SUPPORTED_EXTENSIONS = {
-        "text": [".txt"],
+        "text": [".txt", ".md"],
         "pdf": [".pdf"],
         "word": [".docx", ".doc"],
-        "markdown": [".md"],
     }
 
 
