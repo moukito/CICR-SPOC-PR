@@ -47,8 +47,8 @@ class PDFProcessor:
         Returns:
             Document: Document containing text and metadata
         """
-        all_text = self.extract_pdf_text_and_tables(file_path)
-        return Document(text=all_text, metadata={"filename": file_path, "type": "pdf"})
+        content = self.extract_pdf_text_and_tables(file_path)
+        return Document(text=content, metadata={"filename": file_path, "type": "pdf"})
 
     @staticmethod
     def extract_pdf_text_and_tables(pdf_path):
