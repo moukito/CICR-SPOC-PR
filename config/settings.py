@@ -1,10 +1,22 @@
 """
 Configuration settings for the information retrieval system.
+
+This module centralizes all configuration parameters for the application,
+including AI model settings and system-wide parameters. It provides:
+- Model configurations for LLMs and embedding models
+- System parameters like chunk size and file format support
+- Helper functions to retrieve model configurations
 """
 
 
 class ModelConfig:
-    """Configuration for AI models used in the system."""
+    """
+    Configuration for AI models used in the information retrieval system.
+
+    This class defines the available LLM and embedding models along with their
+    default selections. Each model entry contains its type, name, and description
+    to facilitate model selection and initialization.
+    """
 
     AVAILABLE_LLM_MODELS = {
         "mistral": {
@@ -38,7 +50,10 @@ class ModelConfig:
 
 class SystemConfig:
     """
-    General system configuration.
+    General system configuration parameters.
+
+    This class defines system-wide settings that control the behavior of
+    document processing, history management, and supported file formats.
     """
 
     MAX_CHUNK_SIZE = 1000
@@ -56,7 +71,14 @@ class SystemConfig:
 def get_llm_model(model_key=None):
     """
     Gets the configuration of the specified LLM model.
-    Uses the default model if no model is specified.
+
+    Args:
+        model_key (str, optional): The identifier key for the LLM model.
+            Uses the default model if None.
+
+    Returns:
+        dict: Configuration dictionary for the requested LLM model containing
+            type, name, and description.
     """
     model_key = model_key or ModelConfig.DEFAULT_LLM
     return ModelConfig.AVAILABLE_LLM_MODELS.get(model_key)
@@ -65,7 +87,14 @@ def get_llm_model(model_key=None):
 def get_embedding_model(model_key=None):
     """
     Gets the configuration of the specified embedding model.
-    Uses the default model if no model is specified.
+
+    Args:
+        model_key (str, optional): The identifier key for the embedding model.
+            Uses the default model if None.
+
+    Returns:
+        dict: Configuration dictionary for the requested embedding model containing
+            type, name, and description.
     """
     model_key = model_key or ModelConfig.DEFAULT_EMBEDDING
     return ModelConfig.AVAILABLE_EMBEDDING_MODELS.get(model_key)
