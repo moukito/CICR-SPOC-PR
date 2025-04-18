@@ -1,17 +1,25 @@
+"""
+
+"""
 import os
 
-from llm.document_processor import get_document_processor
+from ..document_processor import get_document_processor
 
 
 def process_directory(directory):
     """
-    Process all files in a directory and convert them to document objects.
+    Processes all files in the given directory and returns a list of processed documents.
 
-    Args:
-        directory (str): Path to the directory containing files to process
+    This function checks whether the given directory exists and processes all files
+    within it using a document processor retrieved via the `get_document_processor`
+    function. If the directory does not exist, it returns an empty list. For each
+    file, it processes the file and adds the processed document to the list.
 
-    Returns:
-        list: List of document objects created from the files in the directory
+    :param directory: The path to the directory containing files to be processed.
+    :type directory: str
+    :return: A list of processed documents, or an empty list if the directory
+        does not exist.
+    :rtype: list
     """
     documents = []
 
@@ -34,13 +42,16 @@ def process_directory(directory):
 
 def process_file(file_path):
     """
-    Process an individual file and convert it to a document object.
+    Processes a given file and returns a list containing the processed document.
 
-    Args:
-        file_path (str): Path to the file to process
+    This function determines the appropriate document processor based on the file
+    path, processes the file using the identified processor, and returns the
+    processed document wrapped in a list.
 
-    Returns:
-        list: Single-element list containing the document object created from the file
+    :param file_path: Path to the file to be processed.
+    :type file_path: str
+    :return: List containing the processed document.
+    :rtype: list
     """
     processor = get_document_processor(file_path)
     document = processor.process_file(file_path)
@@ -55,10 +66,10 @@ def load_documents(path):
     the path is invalid or no documents could be loaded, it returns None.
 
     :param path: The file or directory path to load documents from.
-    :type path: str
+    :type path: Str
     :return: A list of documents if successfully loaded, or None if no documents
         could be loaded or if the path is invalid.
-    :rtype: list or None
+    :rtype: List or None
     """
     print(f"Loading documents from {path}...")
 
