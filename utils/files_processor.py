@@ -1,6 +1,5 @@
-"""
+""" """
 
-"""
 import os
 
 from ..document_processor import get_document_processor
