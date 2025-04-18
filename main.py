@@ -9,12 +9,12 @@ create vector indices, and run an interactive query interface. It supports:
 - Creating vector indices from processed documents
 - Running an interactive CLI for querying the document base
 
-The application uses a combination of LlamaIndex for indexing and retrieval,
+The application uses a combination of LlamaIndex for indexing and retrieval
 and configures LLM models (Ollama) for generating responses.
 """
 
+from .utils.initialize_models import initialize_models
 from .utils.files_processor import load_documents
-from .utils.initialize_models import initialize_llm, initialize_embedding
 from .cli.interactive import InteractiveCLI
 
 from llama_index.core import VectorStoreIndex
@@ -34,23 +34,14 @@ def main():
         None
     """
     documents = []
+    paths = ["data/text/gps"]
 
-    path = "data/text/gps"
-
-    documents += load_documents(path)
+    for path in paths:
+        documents += load_documents(path)
 
     print(f"{len(documents)} documents loaded with success.")
 
-    # Initialise LLM and embedding models
-    llm = initialize_llm("mistral")
-    embed_model = initialize_embedding("minilm")
-
-    if not llm or not embed_model:
-        print(
-            "Initialisation of the model impossible. Please verify the "
-            "configuration."
-        )
-        return
+    llm, embed_model = initialize_models("mistral", "minilm")
 
     # Create vector index
     print("Creating vectoriel index...")

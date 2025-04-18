@@ -1,4 +1,13 @@
-""" """
+"""
+This module provides functions to initialize large language models (LLMs)
+and embedding models based on their configurations. It supports:
+- Initializing LLMs like Ollama
+- Initializing embedding models like HuggingFace
+- Combined initialization of both LLM and embedding models
+
+These functions rely on configuration retrieval to determine the model type
+and name, ensuring flexibility and extensibility for different model setups.
+"""
 
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama
@@ -60,6 +69,32 @@ def initialize_embedding(model_key):
     if model_config["type"] == "huggingface":
         return HuggingFaceEmbedding(model_name=model_config["name"])
 
-    # Support d'autres types de modèles à ajouter ici
     print(f"Unsupported type of embed model: {model_config['type']}")
     return None
+
+
+def initialize_models(
+    model_name: str, embed_model_name: str
+) -> tuple[object, object] | tuple[None, None]:
+    """
+    Initialize a large language model and an embedding model.
+
+    This function initializes both a large language model (LLM) and an embedding model using their respective names provided as arguments. If either model initialization fails, it prints a warning message indicating that the initialization is impossible and prompts verification of the configuration.
+
+    :param model_name: Name of the large language model
+    :type model_name: str
+
+    :param embed_model_name: Name of the embedding model
+    :type embed_model_name: str
+    """
+    llm = initialize_llm(model_name)
+    embed_model = initialize_embedding(embed_model_name)
+
+    if not llm or not embed_model:
+        print(
+            "Initialisation of the model impossible. Please verify the "
+            "configuration."
+        )
+        return None, None
+
+    return llm, embed_model
