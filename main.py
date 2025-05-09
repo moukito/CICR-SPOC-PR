@@ -33,23 +33,8 @@ def main():
     Returns:
         None
     """
-    documents = []
-    paths = ["data/text/gps"]
-
-    for path in paths:
-        documents += load_documents(path)
-
-    print(f"{len(documents)} documents loaded with success.")
-
-    llm, embed_model = initialize_models("mistral", "minilm")
-
-    # Create vector index
-    print("Creating vectoriel index...")
-    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
-    query_engine = index.as_query_engine(llm=llm)
-
     # Run interactive CLI
-    cli = InteractiveCLI(query_engine)
+    cli = InteractiveCLI()
     cli.run()
 
 

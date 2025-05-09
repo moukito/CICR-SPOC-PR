@@ -25,9 +25,20 @@ Dependencies:
     - config.settings: For model configuration and selection
 """
 
+import concurrent.futures
 import os
+from threading import Thread
 from typing import Dict, List, Callable, Optional
+
+from llama_index.core import VectorStoreIndex
+
 from ..config.settings import get_llm_model, get_embedding_model, ModelConfig
+from ..utils.files_processor import load_documents
+from ..utils.initialize_models import (
+    initialize_models,
+    initialize_llm,
+    initialize_embedding,
+)
 
 # Definition of special commands
 SPECIAL_COMMANDS = {
@@ -58,7 +69,7 @@ class InteractiveCLI:
         running (bool): Flag indicating if the interface is active
     """
 
-    def __init__(self, query_engine=None):
+    def __init__(self):
         """
         Initialize the interactive CLI interface with configuration settings.
 
@@ -71,7 +82,12 @@ class InteractiveCLI:
                           against indexed documents. If None, queries will prompt
                           for document loading.
         """
-        self.query_engine = query_engine
+        self.documents = []
+        self.init_thread = None
+        self.initialisation_complete = None
+        self.query_engine = None
+        self.llm = None
+        self.embed_model = None
         self.current_llm = ModelConfig.DEFAULT_LLM
         self.current_embedding = ModelConfig.DEFAULT_EMBEDDING
         self.question_history = []
@@ -99,6 +115,14 @@ class InteractiveCLI:
         print("=" * 60)
         print(" LLM-based Information Retrieval System ".center(60, "="))
         print("=" * 60)
+
+    def print_models(self):
+        """
+        Print the current LLM and embedding models.
+
+        :return: None
+        :rtype: None
+        """
         print(f"Current LLM model: {self.current_llm}")
         print(f"Current embedding model: {self.current_embedding}")
         print("\nType your questions or use a special command (/help for assistance)")
@@ -146,12 +170,35 @@ class InteractiveCLI:
 
         choice = input("\nChange LLM model? [name/n]: ")
         if choice.lower() != "n" and choice in ModelConfig.AVAILABLE_LLM_MODELS:
+            self.initialisation_complete = False
+            # todo thread this
             self.current_llm = choice
+            self.llm = initialize_llm(choice)
+
+            index = VectorStoreIndex.from_documents(
+                self.documents, embed_model=self.embed_model
+            )
+
+            self.query_engine = index.as_query_engine(llm=self.llm)
+
+            self.initialisation_complete = True
             print(f"LLM model changed to: {choice}")
 
         choice = input("Change embedding model? [name/n]: ")
         if choice.lower() != "n" and choice in ModelConfig.AVAILABLE_EMBEDDING_MODELS:
+            self.initialisation_complete = False
+            # todo thread this
             self.current_embedding = choice
+            self.embed_model = initialize_embedding(choice)
+
+            index = VectorStoreIndex.from_documents(
+                self.documents, embed_model=self.embed_model
+            )
+
+            self.query_engine = index.as_query_engine(llm=self.llm)
+
+            self.initialisation_complete = True
+
             print(f"Embedding model changed to: {choice}")
 
         print("\nNote: Changes will take effect during the next indexing.")
@@ -245,6 +292,11 @@ class InteractiveCLI:
         if user_input.startswith("/"):
             return self.handle_command(user_input)
 
+        if not self.initialisation_complete:
+            print("\nModels are still initializing. Please wait...")
+            self.init_thread.join()
+            print("\nModels initialized successfully.")
+
         # Otherwise, it's a question
         self.question_history.append(user_input)
         if self.query_engine:
@@ -258,22 +310,47 @@ class InteractiveCLI:
 
         return True
 
-    def run(self):
+    def initialize(self):
         """
-        Launch the interactive command-line interface and start the main input loop.
+        Initialize the LLM and embedding models based on configuration settings.
 
-        This method:
-        1. Displays the welcome message and system information
-        2. Enters a continuous loop to accept and process user input
-        3. Continues until the user issues a quit command or the application
-           encounters a critical error
-
-        This is the main entry point for starting the interactive session.
+        This method sets up the LLM and embedding models using the specified
+        configurations. It is run in a separate thread to allow for asynchronous
+        initialization without blocking the main interface.
 
         Returns:
             None
         """
+        self.llm, self.embed_model = initialize_models(
+            self.current_llm, self.current_embedding
+        )
+
+        index = VectorStoreIndex.from_documents(
+            self.documents, embed_model=self.embed_model
+        )
+
+        self.query_engine = index.as_query_engine(llm=self.llm)
+
+        self.initialisation_complete = True
+
+    def run(self):
+        """ """
         self.print_welcome()
+
+        self.initialisation_complete = False
+
+        paths = ["data/text/gps"]
+
+        # todo thread this
+        for path in paths:
+            self.documents += load_documents(path)
+
+        print(f"\n{len(self.documents)} documents loaded with success.")
+
+        self.init_thread = Thread(target=self.initialize, daemon=True)
+        self.init_thread.start()
+
+        self.print_models()
 
         while self.running:
             user_input = input("\nQuestion or command > ")
