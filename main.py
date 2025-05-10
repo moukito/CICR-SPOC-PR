@@ -13,11 +13,7 @@ The application uses a combination of LlamaIndex for indexing and retrieval
 and configures LLM models (Ollama) for generating responses.
 """
 
-from .utils.initialize_models import initialize_models
-from .utils.files_processor import load_documents
-from .cli.interactive import InteractiveCLI
-
-from llama_index.core import VectorStoreIndex
+from .cli import InteractiveCLI
 
 
 def main():
@@ -27,7 +23,7 @@ def main():
     This function:
     1. Loads documents from a specified path
     2. Initializes LLM and embedding models
-    3. Creates a vector index from the documents
+    3. Creates a vector index from documents
     4. Launches an interactive CLI for querying the document base
 
     Returns:

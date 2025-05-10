@@ -27,7 +27,9 @@ selected for PDF files by the get_document_processor factory function.
 """
 
 import pdfplumber
+import logging
 from llama_index.core import Document
+from os.path import basename, splitext
 
 
 class PDFProcessor:
@@ -36,6 +38,9 @@ class PDFProcessor:
     Converts PDF content to Document objects with appropriate metadata,
     preserving both textual content and tabular data structure.
     """
+
+    def __init__(self):
+        logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
     def process_file(self, file_path):
         """
@@ -48,7 +53,8 @@ class PDFProcessor:
             Document: Document containing text and metadata
         """
         content = self.extract_pdf_text_and_tables(file_path)
-        return Document(text=content, metadata={"filename": file_path, "type": "pdf"})
+        filename = splitext(basename(file_path))[0]
+        return Document(text=content, metadata={"filename": filename, "type": "pdf"})
 
     @staticmethod
     def extract_pdf_text_and_tables(pdf_path):
