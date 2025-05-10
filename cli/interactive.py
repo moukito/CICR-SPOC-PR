@@ -300,14 +300,11 @@ class InteractiveCLI:
             return self.handle_command(user_input)
 
         self.clear_thread()
-        (
+        if self.init_thread:
             print("\nModels are still initializing. Please wait...")
-            if self.init_thread
-            else None
-        )
-        while self.init_thread:
-            self.wait_initialisation()
-        print("\nModels initialized successfully.")
+            while self.init_thread:
+                self.wait_initialisation()
+            print("\nModels initialized successfully.")
 
         # Otherwise, it's a question
         self.question_history.append(user_input)
