@@ -29,6 +29,11 @@ class ModelConfig:
             "name": "llama3",
             "description": "Modèle Llama 3 via Ollama (local)",
         },
+        "deepseek": {
+            "type": "ollama",
+            "name": "deepseek-r1",
+            "description": "Modèle DeepSeek R1 via Ollama (local)",
+        },
     }
 
     AVAILABLE_EMBEDDING_MODELS = {

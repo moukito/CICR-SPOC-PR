@@ -18,7 +18,7 @@ def generate_response(log, model, queries, documents, llm, embed_model):
 
     for query in queries:
         responses = []
-        for i in range(3):
+        for i in range(5):
             responses.append(str(query_engine.query(query)))
 
         log[model][query] = responses
@@ -26,17 +26,38 @@ def generate_response(log, model, queries, documents, llm, embed_model):
 
 def test():
     queries = [
-        "De quoi parlent les documents ?",
-        "De qui s'agit il ?",
-        "Quel est le sujet ?",
+        "Summarize the key topics and themes covered in the document(s).",
+        "Provide a concise overview of the main points discussed across the entire document collection.",
+        "What is the purpose and scope of the document(s)?",
+        "List the main sections or structural parts of the document(s) with a brief description of each.",
+        "Give a high-level executive summary suitable for someone who has not read the document(s).",
+        "Identify the most important facts, figures, or data points mentioned.",
+        "Extract and explain the central argument or thesis of the document(s).",
+        "List all definitions or technical terms introduced, along with their explanations.",
+        "What are the key insights or findings presented in the document(s), and why are they significant?",
+        "Identify all mentioned entities (people, organizations, locations) and describe their roles in the context.",
+        "Compare and contrast the views or perspectives presented in different parts of the document(s).",
+        "How does the content of the document(s) relate to real-world applications or current issues?",
+        "What assumptions are made in the document(s), and are they explicitly justified?",
+        "Identify any implicit messages or biases in the document(s).",
+        "If you had to teach the content of the document(s) to someone else, how would you structure it?",
+        "Generate a list of FAQs (frequently asked questions) based on the content of the document(s).",
+        "Create a bullet-point briefing for someone needing to make a decision based on the document(s).",
+        "Write a one-paragraph summary suitable for inclusion in a report or dashboard.",
+        "What are the possible implications or action points derived from the document(s)?",
+        "Suggest three questions a critical reader should ask after reading the document(s).",
     ]
 
     models = [
         "mistral",
         "llama3",
+        "deepseek",
     ]
 
-    embedding_models = []
+    embedding_models = [
+        "minilm",
+        "mpnet",
+    ]
 
     documents = []
     paths = ["data/text/gps"]
