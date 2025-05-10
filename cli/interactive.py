@@ -300,10 +300,14 @@ class InteractiveCLI:
             return self.handle_command(user_input)
 
         self.clear_thread()
-        if self.init_thread:
+        (
             print("\nModels are still initializing. Please wait...")
+            if self.init_thread
+            else None
+        )
+        while self.init_thread:
             self.wait_initialisation()
-            print("\nModels initialized successfully.")
+        print("\nModels initialized successfully.")
 
         # Otherwise, it's a question
         self.question_history.append(user_input)
@@ -391,13 +395,10 @@ class InteractiveCLI:
             "data/text/gps",
         ]
 
-        self.load_documents(paths)
-
-        print(f"\n{len(self.documents)} documents loaded with success.")
-
-        if self.documents:
-            self.change_documents = True
-            self.init()
+        self.init_thread.append(
+            Thread(target=self.load_documents, args=(paths,), daemon=True)
+        )
+        self.init_thread[-1].start()
 
         while self.running:
             user_input = input("\nQuestion or command > ")
@@ -432,6 +433,12 @@ class InteractiveCLI:
                         print(f"No documents loaded from {path}")
                 except Exception as exc:
                     print(f"Error loading documents from {path}: {exc}")
+
+        print(f"\n{len(self.documents)} documents loaded with success.")
+
+        if self.documents:
+            self.change_documents = True
+            self.init()
 
     def wait_initialisation(self):
         for index, thread in enumerate(self.init_thread):
