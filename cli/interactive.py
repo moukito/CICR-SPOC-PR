@@ -88,8 +88,12 @@ class InteractiveCLI:
         self.query_engine = None
         self.llm = None
         self.embed_model = None
+        self.index = None
         self.current_llm = ModelConfig.DEFAULT_LLM
         self.current_embedding = ModelConfig.DEFAULT_EMBEDDING
+        self.change_llm = True
+        self.change_embedding = True
+        self.change_documents = True
         self.question_history = []
         self.running = True
 
@@ -168,41 +172,42 @@ class InteractiveCLI:
             current = " (current)" if key == self.current_embedding else ""
             print(f"  {key:<10} - {model['description']}{current}")
 
-        choice = input("\nChange LLM model? [name/n]: ")
-        if choice.lower() != "n" and choice in ModelConfig.AVAILABLE_LLM_MODELS:
-            self.initialisation_complete = False
-            # todo thread this
-            self.current_llm = choice
-            self.llm = initialize_llm(choice)
+        self._prompt_model_change(
+            "LLM",
+            ModelConfig.AVAILABLE_LLM_MODELS,
+            lambda callback: setattr(self, "current_llm", callback)
+            or setattr(self, "change_llm", True),
+        )
 
-            index = VectorStoreIndex.from_documents(
-                self.documents, embed_model=self.embed_model
-            )
-
-            self.query_engine = index.as_query_engine(llm=self.llm)
-
-            self.initialisation_complete = True
-            print(f"LLM model changed to: {choice}")
-
-        choice = input("Change embedding model? [name/n]: ")
-        if choice.lower() != "n" and choice in ModelConfig.AVAILABLE_EMBEDDING_MODELS:
-            self.initialisation_complete = False
-            # todo thread this
-            self.current_embedding = choice
-            self.embed_model = initialize_embedding(choice)
-
-            index = VectorStoreIndex.from_documents(
-                self.documents, embed_model=self.embed_model
-            )
-
-            self.query_engine = index.as_query_engine(llm=self.llm)
-
-            self.initialisation_complete = True
-
-            print(f"Embedding model changed to: {choice}")
+        self._prompt_model_change(
+            "embedding",
+            ModelConfig.AVAILABLE_EMBEDDING_MODELS,
+            lambda callback: setattr(self, "current_embedding", callback)
+            or setattr(self, "change_embedding", True),
+        )
 
         print("\nNote: Changes will take effect during the next indexing.")
         print("-" * 60)
+
+    @staticmethod
+    def _prompt_model_change(model_type, available_models, update_callback):
+        """
+        Prompt the user to change a specific model type.
+
+        Args:
+            model_type (str): The type of model ("LLM" or "embedding")
+            available_models (dict): Dictionary of available models
+            update_callback (callable): Function to call with selected model to update state
+        """
+        while (
+            choice := input(f"\nChange {model_type} model? [name/n]: ").lower()
+        ) and choice != "n":
+            if choice in available_models:
+                update_callback(choice)
+                print(f"{model_type} model changed to: {choice}")
+                break
+            else:
+                print(f"Invalid choice: {choice}. Please select a valid model.")
 
     def show_history(self):
         """
@@ -249,9 +254,12 @@ class InteractiveCLI:
             self.show_help()
         elif command == "/models":
             self.show_models()
+            if self.change_llm or self.change_embedding:
+                self.init()
         elif command == "/clear":
             self.clear_screen()
             self.print_welcome()
+            self.print_models()
         elif command == "/history":
             self.show_history()
         elif command == "/config":
@@ -310,35 +318,77 @@ class InteractiveCLI:
 
         return True
 
+    def init(self):
+        """
+        Initialize the models and query engine in a separate thread.
+
+        This method starts a new thread to handle the initialization of
+        models and the query engine. It ensures that the main thread remains
+        responsive while the initialization is in progress.
+
+        :return: None
+        :rtype: None
+        """
+        self.initialisation_complete = False
+
+        if self.init_thread is None or not self.init_thread.is_alive():
+            self.init_thread = Thread(target=self.initialize, daemon=True)
+            self.init_thread.start()
+        else:
+            print("\nInitialization was already in progress. Please wait...")
+            self.init_thread.join()
+            print("\nPrevious initialisation complete, will now initialise new models.")
+            self.init()
+
     def initialize(self):
         """
-        Initialize the LLM and embedding models based on configuration settings.
+        Initializes the models and query engine required for document processing and querying.
 
-        This method sets up the LLM and embedding models using the specified
-        configurations. It is run in a separate thread to allow for asynchronous
-        initialization without blocking the main interface.
+        This method sets up the language model (LLM) and embedding model based on the specified
+        current configuration. It further initializes a vector index derived from the supplied
+        documents using the embedding model. Once the index is created, it is converted into a
+        query engine that uses the LLM for processing queries. The initialization status is
+        updated to indicate completion.
 
-        Returns:
-            None
+        :raises RuntimeError: If the initialization process fails at any step.
+
         """
-        self.llm, self.embed_model = initialize_models(
-            self.current_llm, self.current_embedding
-        )
+        if self.change_llm:
+            self.change_llm = False
+            self.llm = initialize_llm(self.current_llm)
 
-        index = VectorStoreIndex.from_documents(
-            self.documents, embed_model=self.embed_model
-        )
+        if self.change_embedding:
+            self.change_embedding = False
+            self.change_documents = True
+            self.embed_model = initialize_embedding(self.current_embedding)
 
-        self.query_engine = index.as_query_engine(llm=self.llm)
+        if self.change_documents:
+            self.change_documents = False
+            self.index = VectorStoreIndex.from_documents(
+                self.documents, embed_model=self.embed_model
+            )
+
+        self.query_engine = self.index.as_query_engine(llm=self.llm)
 
         self.initialisation_complete = True
 
     def run(self):
-        """ """
+        """
+        Executes the main logic of the application, including initializing resources,
+        loading documents, handling user input, and managing threads for specific tasks.
+        Coordinates the flow of user interactions and processing as per designated commands
+        or queries.
+
+        :return: None
+        :rtype: NoneType
+        """
         self.print_welcome()
 
-        self.initialisation_complete = False
+        self.show_models()
+        self.print_models()
+        self.init()
 
+        # todo : choose files
         paths = ["data/text/gps"]
 
         # todo thread this
@@ -346,11 +396,6 @@ class InteractiveCLI:
             self.documents += load_documents(path)
 
         print(f"\n{len(self.documents)} documents loaded with success.")
-
-        self.init_thread = Thread(target=self.initialize, daemon=True)
-        self.init_thread.start()
-
-        self.print_models()
 
         while self.running:
             user_input = input("\nQuestion or command > ")
