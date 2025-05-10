@@ -29,9 +29,7 @@ def process_directory(directory):
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
         try:
-            processor = get_document_processor(file_path)
-            document = processor.process_file(file_path)
-            documents.append(document)
+            documents += process_file(file_path)
             print(f"Files successfully loaded: {filename}")
         except Exception as e:
             print(f"An error occurred while loading {filename}: {str(e)}")
