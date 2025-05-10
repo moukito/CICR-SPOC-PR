@@ -83,8 +83,7 @@ class InteractiveCLI:
                           for document loading.
         """
         self.documents = []
-        self.init_thread = None
-        self.initialisation_complete = None
+        self.init_thread = []
         self.query_engine = None
         self.llm = None
         self.embed_model = None
@@ -93,7 +92,7 @@ class InteractiveCLI:
         self.current_embedding = ModelConfig.DEFAULT_EMBEDDING
         self.change_llm = True
         self.change_embedding = True
-        self.change_documents = True
+        self.change_documents = False
         self.question_history = []
         self.running = True
 
@@ -300,15 +299,17 @@ class InteractiveCLI:
         if user_input.startswith("/"):
             return self.handle_command(user_input)
 
-        if not self.initialisation_complete:
+        self.clear_thread()
+        if self.init_thread:
             print("\nModels are still initializing. Please wait...")
-            self.init_thread.join()
+            self.wait_initialisation()
             print("\nModels initialized successfully.")
 
         # Otherwise, it's a question
         self.question_history.append(user_input)
         if self.query_engine:
             try:
+                # todo : loading visual
                 response = self.query_engine.query(user_input)
                 print("\nResponse:\n", response)
             except Exception as e:
@@ -329,16 +330,8 @@ class InteractiveCLI:
         :return: None
         :rtype: None
         """
-        self.initialisation_complete = False
-
-        if self.init_thread is None or not self.init_thread.is_alive():
-            self.init_thread = Thread(target=self.initialize, daemon=True)
-            self.init_thread.start()
-        else:
-            print("\nInitialization was already in progress. Please wait...")
-            self.init_thread.join()
-            print("\nPrevious initialisation complete, will now initialise new models.")
-            self.init()
+        self.init_thread.append(Thread(target=self.initialize, daemon=True))
+        self.init_thread[-1].start()
 
     def initialize(self):
         """
@@ -359,18 +352,23 @@ class InteractiveCLI:
 
         if self.change_embedding:
             self.change_embedding = False
-            self.change_documents = True
             self.embed_model = initialize_embedding(self.current_embedding)
+            if self.documents:
+                self.change_documents = True
 
-        if self.change_documents:
-            self.change_documents = False
-            self.index = VectorStoreIndex.from_documents(
-                self.documents, embed_model=self.embed_model
-            )
+        if self.change_documents and self.documents:
+            if self.embed_model is not None:
+                self.change_documents = False
+                self.index = VectorStoreIndex.from_documents(
+                    self.documents, embed_model=self.embed_model
+                )
+            else:
+                return self.wait_initialisation() and self.init()
 
-        self.query_engine = self.index.as_query_engine(llm=self.llm)
+        if self.index is not None:
+            self.query_engine = self.index.as_query_engine(llm=self.llm)
 
-        self.initialisation_complete = True
+        return None
 
     def run(self):
         """
@@ -389,14 +387,58 @@ class InteractiveCLI:
         self.init()
 
         # todo : choose files
-        paths = ["data/text/gps"]
+        paths = [
+            "data/text/gps",
+        ]
 
-        # todo thread this
-        for path in paths:
-            self.documents += load_documents(path)
+        self.load_documents(paths)
 
         print(f"\n{len(self.documents)} documents loaded with success.")
+
+        if self.documents:
+            self.change_documents = True
+            self.init()
 
         while self.running:
             user_input = input("\nQuestion or command > ")
             self.process_input(user_input)
+
+    def load_documents(self, paths):
+        """
+        Load documents from multiple paths using threading to improve performance.
+
+        This method creates a separate thread for each path to load documents concurrently.
+        It uses ThreadPoolExecutor to manage the threads and collect the results.
+
+        Args:
+            paths (List[str]): List of file or directory paths to load documents from
+
+        Returns:
+            None: Documents are added to self.documents
+        """
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_path = {
+                executor.submit(load_documents, path): path for path in paths
+            }
+
+            for future in concurrent.futures.as_completed(future_to_path):
+                path = future_to_path[future]
+                try:
+                    result = future.result()
+                    if result:
+                        self.documents.extend(result)
+                        print(f"Loaded documents from {path}")
+                    else:
+                        print(f"No documents loaded from {path}")
+                except Exception as exc:
+                    print(f"Error loading documents from {path}: {exc}")
+
+    def wait_initialisation(self):
+        for index, thread in enumerate(self.init_thread):
+            thread.join()
+            self.init_thread.pop(index)
+
+    def clear_thread(self):
+        for index, thread in enumerate(self.init_thread):
+            if not thread.is_alive():
+                self.init_thread.pop(index)
