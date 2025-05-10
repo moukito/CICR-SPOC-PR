@@ -27,6 +27,7 @@ Dependencies:
 
 import concurrent.futures
 import os
+import threading
 from threading import Thread
 from typing import Dict, List, Callable, Optional
 
@@ -301,24 +302,60 @@ class InteractiveCLI:
 
         self.clear_thread()
         if self.init_thread:
-            print("\nModels are still initializing. Please wait...")
+            loading_event = threading.Event()
+            loading_thread = Thread(
+                target=self.show_loading_animation,
+                args=(loading_event, "Models are initializing"),
+                daemon=True,
+            )
+            loading_thread.start()
+
             while self.init_thread:
                 self.wait_initialisation()
+
+            loading_event.set()
+            loading_thread.join()
+
             print("\nModels initialized successfully.")
 
         # Otherwise, it's a question
         self.question_history.append(user_input)
         if self.query_engine:
             try:
-                # todo : loading visual
+                loading_event = threading.Event()
+                loading_thread = Thread(
+                    target=self.show_loading_animation,
+                    args=(loading_event, "Processing query"),
+                    daemon=True,
+                )
+                loading_thread.start()
+
                 response = self.query_engine.query(user_input)
+
+                loading_event.set()
+                loading_thread.join()
+
                 print("\nResponse:\n", response)
             except Exception as e:
+                if "loading_event" in locals():
+                    loading_event.set()
+                    loading_thread.join()
                 print(f"\nError processing the query: {str(e)}")
         else:
             print("\nNo query engine is configured. Please load documents first.")
 
         return True
+
+    @staticmethod
+    def show_loading_animation(stop_event, message="Processing"):
+        spinner = ["|", "/", "-", "\\"]
+        i = 0
+        while not stop_event.is_set():
+            print(f"\r{message} {spinner[i % len(spinner)]}", end="", flush=True)
+            i += 1
+            stop_event.wait(0.1)
+
+        print("\r" + " " * (len(message) + 10), end="\r", flush=True)
 
     def init(self):
         """
