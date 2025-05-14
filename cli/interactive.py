@@ -30,6 +30,7 @@ import os
 import threading
 from threading import Thread
 from typing import Dict, List, Callable, Optional
+from ollama import chat, ChatResponse
 
 from llama_index.core import VectorStoreIndex
 
@@ -312,6 +313,7 @@ class InteractiveCLI:
 
             while self.init_thread:
                 self.wait_initialisation()
+                self.clear_thread()
 
             loading_event.set()
             loading_thread.join()
@@ -330,6 +332,9 @@ class InteractiveCLI:
                 )
                 loading_thread.start()
 
+                user_input = self.rewrite_query(user_input)
+                # todo : put this in a separate history
+                print("\nRewritten query:\n", user_input)
                 response = self.query_engine.query(user_input)
 
                 loading_event.set()
@@ -476,10 +481,40 @@ class InteractiveCLI:
 
     def wait_initialisation(self):
         for index, thread in enumerate(self.init_thread):
-            thread.join()
-            self.init_thread.pop(index)
+            if thread != threading.current_thread():
+                thread.join()
 
     def clear_thread(self):
         for index, thread in enumerate(self.init_thread):
             if not thread.is_alive():
                 self.init_thread.pop(index)
+
+    def rewrite_query(self, user_input):
+        prompt = f"""Rewrite the following query by incorporating relevant context from the conversation history.
+    The rewritten query should:
+    
+    - Preserve the core intent and meaning of the original query
+    - Expand and clarify the query to make it more specific and informative for retrieving relevant context
+    - Avoid introducing new topics or queries that deviate from the original query
+    - DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
+    
+    Return ONLY the rewritten query text, without any additional formatting or explanations.
+    
+    Conversation History:
+    {self.question_history}
+    
+    Original query: [{user_input}]
+    
+    Rewritten query: 
+    """
+        # todo : delete this
+        print(f"\nPrompt:\n{prompt}")
+        return chat(
+            model=self.current_llm,
+            messages=[
+                {
+                    "role": "system",
+                    "content": prompt,
+                },
+            ],
+        ).message.content
