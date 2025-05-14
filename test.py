@@ -80,9 +80,9 @@ def test():
 
         llm, embed_model = initialize_models("llama3", embedding_model)
 
-        generate_response(log, embedding_models, queries, documents, llm, embed_model)
+        generate_response(log, embedding_model, queries, documents, llm, embed_model)
 
-    with open("log.json", "w") as f:
+    with open("result/model_comparaison.json", "w") as f:
         json.dump(log, f, indent=4)
 
 
