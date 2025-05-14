@@ -31,7 +31,7 @@ class ModelConfig:
         },
         "deepseek": {
             "type": "ollama",
-            "name": "deepseek-r1",
+            "name": "deepseek-r1:8b",
             "description": "Modèle DeepSeek R1 via Ollama (local)",
         },
     }
