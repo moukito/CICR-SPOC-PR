@@ -20,6 +20,7 @@ This module is a central component of the document processing system,
 facilitating the processing of different document types through a common interface.
 """
 
+import os
 from .pdf_processor import PDFProcessor
 from .text_processor import TextProcessor
 from .docx_processor import DocxProcessor
@@ -42,6 +43,9 @@ def get_document_processor(file_path):
     Raises:
         ValueError: If the file type is not supported by any available processor
     """
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
     file_type = detect_file_type(file_path)
 
     if file_type == "pdf":
