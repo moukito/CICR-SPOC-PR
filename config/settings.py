@@ -26,12 +26,12 @@ class ModelConfig:
         },
         "llama3": {
             "type": "ollama",
-            "name": "llama3",
+            "name": "llama3.1",
             "description": "Modèle Llama 3 via Ollama (local)",
         },
         "deepseek": {
             "type": "ollama",
-            "name": "deepseek-r1:8b",
+            "name": "deepseek-r1",
             "description": "Modèle DeepSeek R1 via Ollama (local)",
         },
     }
@@ -47,9 +47,14 @@ class ModelConfig:
             "name": "sentence-transformers/all-mpnet-base-v2",
             "description": "MPNet (more accurate but heavier)",
         },
+        "jina": {
+            "type": "huggingface",
+            "name": "jinaai/jina-embeddings-v2-base-code",
+            "description": "Jina AI Embeddings V2 (default)",
+        },
     }
 
-    DEFAULT_LLM = "mistral"
+    DEFAULT_LLM = "llama3"
     DEFAULT_EMBEDDING = "minilm"
 
 
