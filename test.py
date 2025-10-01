@@ -2,24 +2,25 @@
 
 import json
 
-from llama_index.core import VectorStoreIndex
-
 from .utils.files_processor import load_documents
-from .utils.initialize_models import (
-    initialize_llm,
-    initialize_embedding,
-    initialize_models,
-)
+from llm.models.initialize_models import Agno, LlamaIndex
+
+import os
+import dotenv
+
+dotenv.load_dotenv()
+USE_LEGACY = bool(int(os.getenv("USE_LEGACY", 0)))
 
 
-def generate_response(log, model, queries, documents, llm, embed_model):
-    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
-    query_engine = index.as_query_engine(llm=llm)
+def generate_response(log, model, embedding, queries, documents, ai):
+    ai.initialize_embedding(embedding)
+    ai.vectorize(documents)
+    ai.initialize_agent(model)
 
     for query in queries:
         responses = []
         for i in range(5):
-            responses.append(str(query_engine.query(query)))
+            responses.append(str(ai.query(query)))
 
         log[model][query] = responses
 
@@ -51,7 +52,6 @@ def test():
     models = [
         "mistral",
         "llama3",
-        "deepseek",
     ]
 
     embedding_models = [
@@ -60,27 +60,30 @@ def test():
     ]
 
     documents = []
-    paths = ["data/text/gps"]
+    # todo : multiple environment paths
+    paths = [
+        os.getenv(
+            "DOCUMENT_PATH",
+            "data/text/autopsie/DICTAMEN DE IDENTIFICACIÓN FGJCDMX final.pdf",
+        )
+    ]
 
     for path in paths:
         documents += load_documents(path)
 
     print(f"{len(documents)} documents loaded with success.")
 
+    ai = Agno() if not USE_LEGACY else LlamaIndex()
     log = {}
     for model in models:
         log[model] = {}
 
-        llm, embed_model = initialize_models(model, "minilm")
-
-        generate_response(log, model, queries, documents, llm, embed_model)
+        generate_response(log, model, "minilm", queries, documents, ai)
 
     for embedding_model in embedding_models:
         log[embedding_model] = {}
 
-        llm, embed_model = initialize_models("llama3", embedding_model)
-
-        generate_response(log, embedding_model, queries, documents, llm, embed_model)
+        generate_response(log, "llama3", embedding_model, queries, documents, ai)
 
     with open("result/model_comparaison.json", "w") as f:
         json.dump(log, f, indent=4)

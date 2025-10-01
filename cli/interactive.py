@@ -12,6 +12,8 @@ Features:
 - Model selection and configuration
 - Question history tracking
 - Terminal-based user interface with clear formatting
+- Supports two vector backends: in-memory LlamaIndex index (default) or a
+  pre-populated persistent Chroma vector database (decoupled ingestion)
 
 The primary class, InteractiveCLI, manages the interactive session and
 processes both natural language questions and special commands prefixed
@@ -29,18 +31,25 @@ import concurrent.futures
 import os
 import threading
 from threading import Thread
-from typing import Dict, List, Callable, Optional
-from ollama import chat, ChatResponse
+from typing import List
+from ollama import chat
 
-from llama_index.core import VectorStoreIndex
-
-from ..config.settings import get_llm_model, get_embedding_model, ModelConfig
+from ..config.settings import ModelConfig, get_llm_model
 from ..utils.files_processor import load_documents
-from ..utils.initialize_models import (
-    initialize_models,
-    initialize_llm,
-    initialize_embedding,
+from llm.models.initialize_models import (
+    Agno,
+    LlamaIndex,
+    ChromaAIModel,
 )
+
+import dotenv
+
+dotenv.load_dotenv()
+USE_LEGACY = bool(int(os.getenv("USE_LEGACY", 0)))
+VECTOR_BACKEND = os.getenv("VECTOR_BACKEND", "llamaindex").lower()  # or "chroma"
+CHROMA_SKIP_LOAD = bool(
+    int(os.getenv("CHROMA_SKIP_LOAD", 1))
+)  # don't load docs in chroma mode
 
 # Definition of special commands
 SPECIAL_COMMANDS = {
@@ -51,6 +60,7 @@ SPECIAL_COMMANDS = {
     "/config": "Display and modify the configuration",
     "/clear": "Clear the screen",
     "/history": "Display question history",
+    "/backend": "Display / switch vector backend (llamaindex/chroma)",
 }
 
 
@@ -84,12 +94,13 @@ class InteractiveCLI:
                           against indexed documents. If None, queries will prompt
                           for document loading.
         """
+        self.backend = VECTOR_BACKEND
         self.documents = []
         self.init_thread = []
-        self.query_engine = None
-        self.llm = None
-        self.embed_model = None
-        self.index = None
+        if self.backend == "chroma":
+            self.ai = ChromaAIModel()
+        else:
+            self.ai = Agno() if not USE_LEGACY else LlamaIndex()
         self.current_llm = ModelConfig.DEFAULT_LLM
         self.current_embedding = ModelConfig.DEFAULT_EMBEDDING
         self.change_llm = True
@@ -120,6 +131,12 @@ class InteractiveCLI:
         print("=" * 60)
         print(" LLM-based Information Retrieval System ".center(60, "="))
         print("=" * 60)
+        print(f"Vector backend: {self.backend}")
+        if self.backend == "chroma":
+            print(
+                "Chroma mode: documents must be ingested separately (see ingest_chroma.py)"
+            )
+        print()
 
     def print_models(self):
         """
@@ -129,7 +146,8 @@ class InteractiveCLI:
         :rtype: None
         """
         print(f"Current LLM model: {self.current_llm}")
-        print(f"Current embedding model: {self.current_embedding}")
+        if self.backend != "chroma":
+            print(f"Current embedding model: {self.current_embedding}")
         print("\nType your questions or use a special command (/help for assistance)")
         print("-" * 60)
 
@@ -168,10 +186,13 @@ class InteractiveCLI:
             current = " (current)" if key == self.current_llm else ""
             print(f"  {key:<10} - {model['description']}{current}")
 
-        print("\nAvailable embedding models:")
-        for key, model in ModelConfig.AVAILABLE_EMBEDDING_MODELS.items():
-            current = " (current)" if key == self.current_embedding else ""
-            print(f"  {key:<10} - {model['description']}{current}")
+        if (
+            self.backend != "chroma"
+        ):  # embedding choice only relevant for local indexing
+            print("\nAvailable embedding models:")
+            for key, model in ModelConfig.AVAILABLE_EMBEDDING_MODELS.items():
+                current = " (current)" if key == self.current_embedding else ""
+                print(f"  {key:<10} - {model['description']}{current}")
 
         self._prompt_model_change(
             "LLM",
@@ -180,12 +201,13 @@ class InteractiveCLI:
             or setattr(self, "change_llm", True),
         )
 
-        self._prompt_model_change(
-            "embedding",
-            ModelConfig.AVAILABLE_EMBEDDING_MODELS,
-            lambda callback: setattr(self, "current_embedding", callback)
-            or setattr(self, "change_embedding", True),
-        )
+        if self.backend != "chroma":
+            self._prompt_model_change(
+                "embedding",
+                ModelConfig.AVAILABLE_EMBEDDING_MODELS,
+                lambda callback: setattr(self, "current_embedding", callback)
+                or setattr(self, "change_embedding", True),
+            )
 
         print("\nNote: Changes will take effect during the next indexing.")
         print("-" * 60)
@@ -255,7 +277,7 @@ class InteractiveCLI:
             self.show_help()
         elif command == "/models":
             self.show_models()
-            if self.change_llm or self.change_embedding:
+            if self.change_llm or (self.change_embedding and self.backend != "chroma"):
                 self.init()
         elif command == "/clear":
             self.clear_screen()
@@ -265,6 +287,11 @@ class InteractiveCLI:
             self.show_history()
         elif command == "/config":
             print("\nConfiguration not implemented yet.")
+        elif command == "/backend":
+            print(f"Current backend: {self.backend}")
+            print(
+                "To change backend, restart the app with env VECTOR_BACKEND=chroma or llamaindex"
+            )
         else:
             print(f"Unknown command: {command}")
             print("Use /help to see available commands.")
@@ -297,7 +324,6 @@ class InteractiveCLI:
         if not user_input.strip():
             return True
 
-        # If it's a special command
         if user_input.startswith("/"):
             return self.handle_command(user_input)
 
@@ -320,9 +346,16 @@ class InteractiveCLI:
 
             print("\nModels initialized successfully.")
 
-        # Otherwise, it's a question
         self.question_history.append(user_input)
-        if self.query_engine:
+
+        can_query = False
+        if self.backend == "chroma":
+            # Only need LLM initialization
+            can_query = True if getattr(self.ai, "model_name", None) else False
+        else:
+            can_query = getattr(self.ai, "agent", None) is not None
+
+        if can_query:
             try:
                 loading_event = threading.Event()
                 loading_thread = Thread(
@@ -332,10 +365,9 @@ class InteractiveCLI:
                 )
                 loading_thread.start()
 
-                user_input = self.rewrite_query(user_input)
-                # todo : put this in a separate history
-                print("\nRewritten query:\n", user_input)
-                response = self.query_engine.query(user_input)
+                print("\nQuery:")
+                print(user_input)
+                response = self.ai.query(user_input)
 
                 loading_event.set()
                 loading_thread.join()
@@ -347,7 +379,14 @@ class InteractiveCLI:
                     loading_thread.join()
                 print(f"\nError processing the query: {str(e)}")
         else:
-            print("\nNo query engine is configured. Please load documents first.")
+            if self.backend == "chroma":
+                print(
+                    "\nLLM not yet initialized. Wait or re-run /models to trigger initialization."
+                )
+            else:
+                print(
+                    "\nNo query engine is configured. Please load documents first (or indexing in progress)."
+                )
 
         return True
 
@@ -389,27 +428,29 @@ class InteractiveCLI:
         :raises RuntimeError: If the initialization process fails at any step.
 
         """
-        if self.change_llm:
-            self.change_llm = False
-            self.llm = initialize_llm(self.current_llm)
+        if self.backend == "chroma":
+            if self.change_llm:
+                self.change_llm = False
+                self.ai.initialize_agent(self.current_llm)
+            return None
 
+        # llamaindex backend (original behavior)
         if self.change_embedding:
             self.change_embedding = False
-            self.embed_model = initialize_embedding(self.current_embedding)
+            self.ai.initialize_embedding(self.current_embedding)
             if self.documents:
                 self.change_documents = True
 
         if self.change_documents and self.documents:
-            if self.embed_model is not None:
+            if self.ai.embedding is not None:
                 self.change_documents = False
-                self.index = VectorStoreIndex.from_documents(
-                    self.documents, embed_model=self.embed_model
-                )
+                self.ai.vectorize(self.documents)
             else:
                 return self.wait_initialisation() and self.init()
 
-        if self.index is not None:
-            self.query_engine = self.index.as_query_engine(llm=self.llm)
+        if self.ai.knowledge_base is not None and self.change_llm:
+            self.change_llm = False
+            self.ai.initialize_agent(self.current_llm)
 
         return None
 
@@ -424,20 +465,22 @@ class InteractiveCLI:
         :rtype: NoneType
         """
         self.print_welcome()
-
         self.show_models()
         self.print_models()
         self.init()
 
-        # todo : choose files
-        paths = [
-            "data/text/gps",
-        ]
-
-        self.init_thread.append(
-            Thread(target=self.load_documents, args=(paths,), daemon=True)
-        )
-        self.init_thread[-1].start()
+        if self.backend != "chroma" or not CHROMA_SKIP_LOAD:
+            paths = [
+                "data/text/gps",
+            ]
+            self.init_thread.append(
+                Thread(target=self.load_documents, args=(paths,), daemon=True)
+            )
+            self.init_thread[-1].start()
+        else:
+            print(
+                "Skipping document loading (Chroma backend). Make sure you have run ingest_chroma.py."
+            )
 
         while self.running:
             user_input = input("\nQuestion or command > ")
@@ -501,7 +544,7 @@ class InteractiveCLI:
     Return ONLY the rewritten query text, without any additional formatting or explanations.
     
     Conversation History:
-    {self.question_history}
+    {self.question_history[:-1]}
     
     Original query: [{user_input}]
     
@@ -510,7 +553,7 @@ class InteractiveCLI:
         # todo : delete this
         print(f"\nPrompt:\n{prompt}")
         return chat(
-            model=self.current_llm,
+            model=get_llm_model(self.current_llm).get("name"),
             messages=[
                 {
                     "role": "system",
