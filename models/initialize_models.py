@@ -14,26 +14,17 @@ from typing import Optional, List, Dict, Any
 
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama as LlamaIndexOllama
-from llama_index.core import (
-    SimpleDirectoryReader,
-    StorageContext,
-    VectorStoreIndex,
-)
+from llama_index.core import VectorStoreIndex
 from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.node_parser import SentenceSplitter
-
-from langchain_ollama import ChatOllama
-from langchain.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 
 from agno.agent import Agent
 from agno.models.ollama import Ollama
 from agno.knowledge.embedder.huggingface import HuggingfaceCustomEmbedder
 from agno.knowledge.knowledge import Knowledge
-from agno.vectordb.llamaindex import LlamaIndexVectorDb
 
 from llm.config import get_llm_model, get_embedding_model
 from llm.vector_db import ChromaVectorStore
+from llm.vector_db.agno_llamaindex import AgnoLlamaIndexVectorDb
 from .base_ai_model import BaseAIModel
 
 import dotenv
@@ -51,6 +42,7 @@ class Agno(BaseAIModel):
         self.db: str = "chromaDB"
         self.knowledge_base: Optional[Knowledge] = None
         self.embedding: Optional[HuggingFaceEmbedding] = None
+        self.agno_embedder: Optional[HuggingfaceCustomEmbedder] = None
         self.agent: Optional[Agent] = None
 
     def initialize_agent(self, model_key: str) -> None:
@@ -100,7 +92,9 @@ class Agno(BaseAIModel):
             return
 
         if model_config["type"] == "huggingface":
-            self.embedding = HuggingfaceCustomEmbedder(id=model_config["name"])
+            # Initialize both LlamaIndex embedding (for VectorStoreIndex) and AGNO embedder
+            self.embedding = HuggingFaceEmbedding(model_name=model_config["name"])
+            self.agno_embedder = HuggingfaceCustomEmbedder(id=model_config["name"])
             self.is_embedding_initialized = True
 
     def vectorize(self, documents: List[Any]) -> None:
@@ -110,13 +104,15 @@ class Agno(BaseAIModel):
                 "Embedding model not initialized. Call initialize_embedding first."
             )
 
+        # Use LlamaIndex HuggingFaceEmbedding (compatible with VectorStoreIndex)
         index = VectorStoreIndex.from_documents(
             documents,
             embed_model=self.embedding,
         )
         retriever = VectorIndexRetriever(index)
+        # Use custom wrapper that properly implements exists() method
         self.knowledge_base = Knowledge(
-            vector_db=LlamaIndexVectorDb(knowledge_retriever=retriever)
+            vector_db=AgnoLlamaIndexVectorDb(knowledge_retriever=retriever)
         )
         self.is_vectorized = True
 

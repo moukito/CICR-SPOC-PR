@@ -17,7 +17,8 @@ import uuid
 from typing import Iterable, List, Dict, Any, Optional
 
 import chromadb
-from chromadb.utils import embedding_functions
+from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
+from sentence_transformers import SentenceTransformer
 
 from llm.config import get_embedding_model
 
@@ -30,6 +31,76 @@ except Exception:  # pragma: no cover
         def __init__(self, text: str, metadata: Optional[Dict[str, Any]] = None):
             self.text = text
             self.metadata = metadata or {}
+
+
+class CustomSentenceTransformerEmbedding(EmbeddingFunction[Documents]):
+    """Custom embedding function that handles TensorFlow to PyTorch conversion."""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self._model = None
+        self._load_model()
+
+    def _load_model(self):
+        """Load the model with proper error handling and model conversion."""
+        import shutil
+
+        try:
+            # Try loading the model normally
+            self._model = SentenceTransformer(self.model_name, trust_remote_code=True)
+            print(f"✓ Model loaded successfully")
+        except (OSError, Exception) as e:
+            error_str = str(e)
+            if "from_tf=True" in error_str or "pytorch_model.bin" in error_str:
+                # Model only has TensorFlow weights - need to convert or use alternative
+                print(f"⚠ PyTorch weights not available for {self.model_name}")
+                print(f"⚠ Converting from TensorFlow weights...")
+
+                try:
+                    # Use transformers library to load from TF and convert to PyTorch
+                    from transformers import AutoModel, AutoTokenizer
+                    import tempfile
+
+                    # Load the TensorFlow model and convert
+                    tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                    model = AutoModel.from_pretrained(self.model_name, from_tf=True)
+
+                    # Save to a temporary directory as PyTorch
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        model.save_pretrained(tmpdir)
+                        tokenizer.save_pretrained(tmpdir)
+
+                        # Now load with SentenceTransformer from the converted model
+                        self._model = SentenceTransformer(tmpdir)
+
+                    print(f"✓ Model converted from TensorFlow to PyTorch successfully")
+                except Exception as convert_error:
+                    print(f"✗ Conversion failed: {convert_error}")
+
+                    # Clear cache and suggest alternatives
+                    cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
+                    model_cache = os.path.join(
+                        cache_dir, f"models--{self.model_name.replace('/', '--')}"
+                    )
+                    if os.path.exists(model_cache):
+                        shutil.rmtree(model_cache, ignore_errors=True)
+                        print(f"✓ Cleared cache for {self.model_name}")
+
+                    print(
+                        f"\n⚠ RECOMMENDED: Use a different embedding model with native PyTorch support:"
+                    )
+                    print(f"   Set environment variable: EMBEDDING_MODEL_KEY=mpnet")
+                    print(f"   Or use: EMBEDDING_MODEL_KEY=bge")
+                    raise RuntimeError(
+                        f"Unable to load embedding model {self.model_name}. Please use a different model."
+                    ) from convert_error
+            else:
+                raise
+
+    def __call__(self, input: Documents) -> Embeddings:
+        """Generate embeddings for a list of texts."""
+        embeddings = self._model.encode(input, convert_to_tensor=False)
+        return embeddings.tolist()
 
 
 class ChromaVectorStore:
@@ -62,10 +133,21 @@ class ChromaVectorStore:
         if not model_conf:
             raise ValueError("Embedding model configuration not found.")
         model_name = model_conf["name"]
-        # Use sentence-transformers embedding function (Chroma built-in) – it will download model if missing.
-        self._embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=model_name
-        )
+
+        print(f"Loading embedding model: {model_name}")
+
+        # Try to use custom embedding function, fall back to ChromaDB default if it fails
+        try:
+            self._embedding_fn = CustomSentenceTransformerEmbedding(model_name)
+        except (RuntimeError, OSError) as e:
+            print(f"⚠ Failed to load {model_name}: {e}")
+            print(f"⚠ Falling back to ChromaDB's default embedding function...")
+            # Use ChromaDB's default embedding (all-MiniLM-L6-v2 with proper handling)
+            from chromadb.utils import embedding_functions
+
+            self._embedding_fn = embedding_functions.DefaultEmbeddingFunction()
+            print(f"✓ Using ChromaDB default embedding function")
+
         self._collection = self._client.get_or_create_collection(
             name=self.collection_name, embedding_function=self._embedding_fn
         )

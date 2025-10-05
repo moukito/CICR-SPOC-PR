@@ -8,6 +8,11 @@ including AI model settings and system-wide parameters. It provides:
 - Helper functions to retrieve model configurations
 """
 
+import os
+import dotenv
+
+dotenv.load_dotenv()
+
 
 class ModelConfig:
     """
@@ -37,6 +42,11 @@ class ModelConfig:
     }
 
     AVAILABLE_EMBEDDING_MODELS = {
+        "bge": {
+            "type": "huggingface",
+            "name": "BAAI/bge-small-en-v1.5",
+            "description": "BGE Small (fast, excellent quality, recommended)",
+        },
         "minilm": {
             "type": "huggingface",
             "name": "sentence-transformers/all-MiniLM-L6-v2",
@@ -47,15 +57,20 @@ class ModelConfig:
             "name": "sentence-transformers/all-mpnet-base-v2",
             "description": "MPNet (more accurate but heavier)",
         },
+        "paraphrase": {
+            "type": "huggingface",
+            "name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "description": "Paraphrase MiniLM (multilingual)",
+        },
         "jina": {
             "type": "huggingface",
             "name": "jinaai/jina-embeddings-v2-base-code",
-            "description": "Jina AI Embeddings V2 (default)",
+            "description": "Jina AI Embeddings V2",
         },
     }
 
-    DEFAULT_LLM = "llama3"
-    DEFAULT_EMBEDDING = "minilm"
+    DEFAULT_LLM = os.getenv("DEFAULT_LLM_KEY", "llama3")
+    DEFAULT_EMBEDDING = os.getenv("DEFAULT_EMBEDDING_KEY", "bge")
 
 
 class SystemConfig:
